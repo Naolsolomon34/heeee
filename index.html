@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Essay & Resume Checker</title>
+    <link rel="icon" href="/public/favicon.svg" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Essay & Resume Checker</h1>
+      <p class="sub">Fast, actionable feedback — no paid AI required.</p>
+    </header>
+
+    <main>
+      <section class="card">
+        <h2>Paste your text</h2>
+        <textarea id="text" rows="14" placeholder="Paste your essay or resume here..."></textarea>
+        <div class="actions">
+          <button id="analyzeBtn">Analyze</button>
+        </div>
+        <p class="hint">Pro tip: keep paragraphs short and specific. Numbers and examples improve your score.</p>
+      </section>
+
+      <section id="results" class="card" style="display:none"></section>
+    </main>
+
+    <footer>
+      <p>Built as an MVP for learning and demo purposes.</p>
+    </footer>
+
+    <script>
+      const elBtn = document.getElementById('analyzeBtn');
+      const elText = document.getElementById('text');
+      const elResults = document.getElementById('results');
+
+      async function analyze() {
+        const text = elText.value.trim();
+        if (!text) {
+          alert('Please paste some text first.');
+          return;
+        }
+        elBtn.disabled = true; elBtn.textContent = 'Analyzing...';
+        try {
+          const res = await fetch('/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Request failed');
+
+          const rows = data.items.map(i => `
+            <tr>
+              <td>${i.category.replace(/^./, c => c.toUpperCase())}</td>
+              <td>${i.score}/10</td>
+              <td>${i.comment}</td>
+            </tr>
+          `).join('');
+
+          elResults.innerHTML = `
+            <h2>Results</h2>
+            <div class="score">
+              <div class="score-number">${data.percent}%</div>
+              <div class="score-meta">${data.total} / ${data.out_of}</div>
+              <p>${data.summary}</p>
+            </div>
+            <table class="rubric">
+              <thead>
+                <tr><th>Category</th><th>Score</th><th>Comment</th></tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+            <div class="suggestions">
+              <h3>Top Suggestions</h3>
+              <ul>${data.suggestions.map(s => `<li>${s}</li>`).join('')}</ul>
+            </div>
+            <div class="actions">
+              <button id="copyBtn" class="ghost">Copy Summary</button>
+              <button id="downloadBtn" class="ghost">Download Report</button>
+            </div>
+          `;
+
+          // Copy & Download handlers
+          elResults.style.display = '';
+          document.getElementById('copyBtn').onclick = async () => {
+            const summary = `Score: ${data.percent}% ( ${data.total}/${data.out_of} )
+` +
+              data.items.map(i => `${i.category}: ${i.score}/10 — ${i.comment}`).join('
+') +
+              `
+Suggestions:
+- ` + data.suggestions.join('
+- ');
+            await navigator.clipboard.writeText(summary);
+            alert('Summary copied to clipboard');
+          };
+
+          document.getElementById('downloadBtn').onclick = () => {
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = 'analysis.json'; a.click();
+            URL.revokeObjectURL(url);
+          };
+
+        } catch (e) {
+          alert(e.message || 'Something went wrong');
+        } finally {
+          elBtn.disabled = false; elBtn.textContent = 'Analyze';
+        }
+      }
+
+      elBtn.addEventListener('click', analyze);
+      elText.addEventListener('keydown', (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'enter') analyze();
+      });
+    </script>
+  </body>
+</html>
