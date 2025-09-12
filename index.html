@@ -20,7 +20,8 @@
         <div class="actions">
           <button id="analyzeBtn">Analyze</button>
         </div>
-        <p class="hint">Pro tip: keep paragraphs short and specific. Numbers and examples improve your score.</p>
+        <p class="hint">Tip: You can press Ctrl/Cmd+Enter to analyze.</p>
+        <p id="error" class="hint" style="color:#ff9aa2; display:none"></p>
       </section>
 
       <section id="results" class="card" style="display:none"></section>
@@ -34,24 +35,33 @@
       const elBtn = document.getElementById('analyzeBtn');
       const elText = document.getElementById('text');
       const elResults = document.getElementById('results');
+      const elError = document.getElementById('error');
+
+      function showError(msg){
+        elError.textContent = msg;
+        elError.style.display = '';
+        console.error('[analyze error]', msg);
+      }
 
       async function analyze() {
+        elError.style.display = 'none';
         const text = elText.value.trim();
         if (!text) {
-          alert('Please paste some text first.');
+          showError('Please paste some text first.');
           return;
         }
         elBtn.disabled = true; elBtn.textContent = 'Analyzing...';
         try {
-          const res = await fetch('/analyze', {
+          const url = new URL('/analyze', window.location.origin);
+          const res = await fetch(url.toString(), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text })
+            body: JSON.stringify({ text }),
           });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'Request failed');
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || ('HTTP '+res.status));
 
-          const rows = data.items.map(i => `
+          const rows = (data.items || []).map(i => `
             <tr>
               <td>${i.category.replace(/^./, c => c.toUpperCase())}</td>
               <td>${i.score}/10</td>
@@ -74,7 +84,7 @@
             </table>
             <div class="suggestions">
               <h3>Top Suggestions</h3>
-              <ul>${data.suggestions.map(s => `<li>${s}</li>`).join('')}</ul>
+              <ul>${(data.suggestions || []).map(s => `<li>${s}</li>`).join('')}</ul>
             </div>
             <div class="actions">
               <button id="copyBtn" class="ghost">Copy Summary</button>
@@ -82,17 +92,12 @@
             </div>
           `;
 
-          // Copy & Download handlers
           elResults.style.display = '';
+
           document.getElementById('copyBtn').onclick = async () => {
-            const summary = `Score: ${data.percent}% ( ${data.total}/${data.out_of} )
-` +
-              data.items.map(i => `${i.category}: ${i.score}/10 — ${i.comment}`).join('
-') +
-              `
-Suggestions:
-- ` + data.suggestions.join('
-- ');
+            const summary = `Score: ${data.percent}% ( ${data.total}/${data.out_of} )\n` +
+              data.items.map(i => `${i.category}: ${i.score}/10 — ${i.comment}`).join('\n') +
+              `\nSuggestions:\n- ` + data.suggestions.join('\n- ');
             await navigator.clipboard.writeText(summary);
             alert('Summary copied to clipboard');
           };
@@ -106,7 +111,7 @@ Suggestions:
           };
 
         } catch (e) {
-          alert(e.message || 'Something went wrong');
+          showError(e && e.message ? e.message : 'Something went wrong');
         } finally {
           elBtn.disabled = false; elBtn.textContent = 'Analyze';
         }
@@ -119,3 +124,4 @@ Suggestions:
     </script>
   </body>
 </html>
+
