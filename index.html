@@ -1,127 +1,157 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Essay & Resume Checker</title>
-    <link rel="icon" href="/public/favicon.svg" />
-    <link rel="stylesheet" href="/styles.css" />
-  </head>
-  <body>
-    <header>
-      <h1>Essay & Resume Checker</h1>
-      <p class="sub">Fast, actionable feedback — no paid AI required.</p>
-    </header>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Essay & Resume Checker</title>
+  <link rel="icon" href="/public/favicon.svg" />
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    /* extra safety if styles.css is cached/missing */
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#0b0f14;color:#eaeef3;margin:0}
+    header{padding:24px;text-align:center;background:#0f1720;border-bottom:1px solid #1b2635}
+    h1{margin:0;font-size:28px}.sub{color:#a7b1c2;margin-top:6px}
+    main{max-width:900px;margin:24px auto;padding:0 16px}
+    .card{background:#0f1623;border:1px solid #1b2740;border-radius:16px;padding:16px;margin-bottom:16px}
+    textarea{width:100%;padding:12px;border-radius:12px;border:1px solid #22314a;background:#0c141e;color:#eaeef3;font-size:16px}
+    .actions{margin-top:12px;display:flex;gap:8px}
+    button{background:#2e6bff;color:#fff;border:none;border-radius:12px;padding:12px 16px;font-size:16px;cursor:pointer}
+    button.ghost{background:transparent;border:1px solid #2e6bff}
+    .hint{color:#ff9aa2;display:none}
+    .score{display:grid;grid-template-columns:120px 1fr;align-items:center;gap:12px;margin-bottom:12px}
+    .score-number{font-size:40px;font-weight:700}.score-meta{color:#9db0c5}
+    table{width:100%;border-collapse:collapse}
+    th,td{border-bottom:1px solid #21314b;padding:10px 8px;text-align:left}
+    @media (max-width:640px){.score{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Essay & Resume Checker</h1>
+    <p class="sub">Fast, actionable feedback — no paid AI required.</p>
+  </header>
 
-    <main>
-      <section class="card">
-        <h2>Paste your text</h2>
-        <textarea id="text" rows="14" placeholder="Paste your essay or resume here..."></textarea>
-        <div class="actions">
-          <button id="analyzeBtn">Analyze</button>
-        </div>
-        <p class="hint">Tip: You can press Ctrl/Cmd+Enter to analyze.</p>
-        <p id="error" class="hint" style="color:#ff9aa2; display:none"></p>
-      </section>
+  <main>
+    <section class="card">
+      <h2>Paste your text</h2>
+      <textarea id="text" rows="14" placeholder="Paste your essay or resume here..."></textarea>
+      <div class="actions">
+        <button id="analyzeBtn">Analyze</button>
+        <button id="demoBtn" class="ghost" title="Fill sample text">Use demo text</button>
+      </div>
+      <p id="error" class="hint"></p>
+    </section>
 
-      <section id="results" class="card" style="display:none"></section>
-    </main>
+    <section id="results" class="card" style="display:none"></section>
+  </main>
 
-    <footer>
-      <p>Built as an MVP for learning and demo purposes.</p>
-    </footer>
+  <footer>
+    <p style="text-align:center;color:#9aa8b8;padding:24px 0">Built as an MVP for learning and demo purposes.</p>
+  </footer>
 
-    <script>
-      const elBtn = document.getElementById('analyzeBtn');
-      const elText = document.getElementById('text');
-      const elResults = document.getElementById('results');
-      const elError = document.getElementById('error');
+  <script>
+    const $ = sel => document.querySelector(sel);
+    const btn = $('#analyzeBtn');
+    const demo = $('#demoBtn');
+    const out = $('#results');
+    const err = $('#error');
+    const box = $('#text');
 
-      function showError(msg){
-        elError.textContent = msg;
-        elError.style.display = '';
-        console.error('[analyze error]', msg);
+    demo.onclick = () => {
+      box.value = `Since middle school I have chased challenges, but I learned the most when I slowed down and reflected.
+For example, I led our class fundraiser and tracked costs; we increased revenue by 28% in one month.
+I now focus on clarity and specific impact rather than vague ambition. Ultimately, my goal is to build tools that help students learn faster without losing their voice.`;
+    };
+
+    function showError(msg){
+      err.textContent = msg;
+      err.style.display = '';
+    }
+    function hideError(){
+      err.textContent = '';
+      err.style.display = 'none';
+    }
+
+    async function analyze() {
+      hideError();
+      const text = (box.value || '').trim();
+      if (!text) return showError('Please paste some text first.');
+      btn.disabled = true; btn.textContent = 'Analyzing...';
+      try {
+        const url = new URL('/analyze', window.location.origin);
+        const res = await fetch(url.toString(), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text })
+        });
+        const data = await res.json().catch(()=> ({}));
+        if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+
+        // Build table rows
+        const rows = (data.items || []).map(i => `
+          <tr>
+            <td>${cap(i.category)}</td>
+            <td>${i.score}/10</td>
+            <td>${escapeHtml(i.comment)}</td>
+          </tr>
+        `).join('');
+
+        out.innerHTML = `
+          <h2>Results</h2>
+          <div class="score">
+            <div class="score-number">${data.percent}%</div>
+            <div class="score-meta">${data.total} / ${data.out_of}</div>
+            <p>${escapeHtml(data.summary)}</p>
+          </div>
+          <table class="rubric">
+            <thead><tr><th>Category</th><th>Score</th><th>Comment</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+          <div class="suggestions" style="margin-top:12px">
+            <h3>Top Suggestions</h3>
+            <ul>${(data.suggestions || []).map(s => `<li>${escapeHtml(s)}</li>`).join('')}</ul>
+          </div>
+          <div class="actions" style="margin-top:12px">
+            <button id="copyBtn" class="ghost">Copy Summary</button>
+            <button id="downloadBtn" class="ghost">Download Report</button>
+          </div>
+        `;
+        out.style.display = '';
+
+        // wire actions
+        $('#copyBtn').onclick = async () => {
+          const summary =
+            `Score: ${data.percent}% (${data.total}/${data.out_of})\n` +
+            (data.items || []).map(i => `${i.category}: ${i.score}/10 — ${i.comment}`).join('\n') +
+            `\nSuggestions:\n- ` + (data.suggestions || []).join('\n- ');
+          await navigator.clipboard.writeText(summary);
+          alert('Summary copied to clipboard');
+        };
+        $('#downloadBtn').onclick = () => {
+          const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a'); a.href = url; a.download = 'analysis.json'; a.click();
+          URL.revokeObjectURL(url);
+        };
+
+      } catch (e) {
+        showError(e && e.message ? e.message : 'Something went wrong');
+      } finally {
+        btn.disabled = false; btn.textContent = 'Analyze';
       }
+    }
 
-      async function analyze() {
-        elError.style.display = 'none';
-        const text = elText.value.trim();
-        if (!text) {
-          showError('Please paste some text first.');
-          return;
-        }
-        elBtn.disabled = true; elBtn.textContent = 'Analyzing...';
-        try {
-          const url = new URL('/analyze', window.location.origin);
-          const res = await fetch(url.toString(), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text }),
-          });
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(data.error || ('HTTP '+res.status));
+    btn.addEventListener('click', analyze);
+    box.addEventListener('keydown', e => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'enter') analyze();
+    });
 
-          const rows = (data.items || []).map(i => `
-            <tr>
-              <td>${i.category.replace(/^./, c => c.toUpperCase())}</td>
-              <td>${i.score}/10</td>
-              <td>${i.comment}</td>
-            </tr>
-          `).join('');
-
-          elResults.innerHTML = `
-            <h2>Results</h2>
-            <div class="score">
-              <div class="score-number">${data.percent}%</div>
-              <div class="score-meta">${data.total} / ${data.out_of}</div>
-              <p>${data.summary}</p>
-            </div>
-            <table class="rubric">
-              <thead>
-                <tr><th>Category</th><th>Score</th><th>Comment</th></tr>
-              </thead>
-              <tbody>${rows}</tbody>
-            </table>
-            <div class="suggestions">
-              <h3>Top Suggestions</h3>
-              <ul>${(data.suggestions || []).map(s => `<li>${s}</li>`).join('')}</ul>
-            </div>
-            <div class="actions">
-              <button id="copyBtn" class="ghost">Copy Summary</button>
-              <button id="downloadBtn" class="ghost">Download Report</button>
-            </div>
-          `;
-
-          elResults.style.display = '';
-
-          document.getElementById('copyBtn').onclick = async () => {
-            const summary = `Score: ${data.percent}% ( ${data.total}/${data.out_of} )\n` +
-              data.items.map(i => `${i.category}: ${i.score}/10 — ${i.comment}`).join('\n') +
-              `\nSuggestions:\n- ` + data.suggestions.join('\n- ');
-            await navigator.clipboard.writeText(summary);
-            alert('Summary copied to clipboard');
-          };
-
-          document.getElementById('downloadBtn').onclick = () => {
-            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url; a.download = 'analysis.json'; a.click();
-            URL.revokeObjectURL(url);
-          };
-
-        } catch (e) {
-          showError(e && e.message ? e.message : 'Something went wrong');
-        } finally {
-          elBtn.disabled = false; elBtn.textContent = 'Analyze';
-        }
-      }
-
-      elBtn.addEventListener('click', analyze);
-      elText.addEventListener('keydown', (e) => {
-        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'enter') analyze();
-      });
-    </script>
-  </body>
+    function cap(s){ return s ? s[0].toUpperCase() + s.slice(1) : s; }
+    function escapeHtml(s){
+      return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+  </script>
+</body>
 </html>
+
 
