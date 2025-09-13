@@ -48,13 +48,26 @@
     <!-- Results -->
     <section id="results" class="card" style="display:none"></section>
 
-    <!-- History -->
+    <!-- Account / Saved Docs -->
     <aside class="card side">
-      <h2 class="side-title">History</h2>
-      <div id="history" class="history-empty">No history yet.</div>
-      <div class="actions">
-        <button id="clearHist" class="btn btn-quiet">Clear history</button>
+      <h2 class="side-title">Account</h2>
+      <div id="authBox">
+        <div id="authState" class="history-empty">Checking session…</div>
+        <div id="authForm" style="margin-top:10px">
+          <input id="email" placeholder="email@example.com" style="width:100%;padding:10px 12px;border:1px solid #e8eaf2;border-radius:10px;margin-bottom:8px" />
+          <input id="pass" type="password" placeholder="password" style="width:100%;padding:10px 12px;border:1px solid #e8eaf2;border-radius:10px;margin-bottom:8px" />
+          <div class="actions">
+            <button id="signup" class="btn btn-quiet">Sign up</button>
+            <button id="login" class="btn btn-quiet">Log in</button>
+          </div>
+        </div>
+        <div id="authActions" class="actions" style="display:none;margin-top:8px">
+          <button id="logout" class="btn btn-quiet">Log out</button>
+        </div>
       </div>
+
+      <h2 class="side-title" style="margin-top:18px">Saved</h2>
+      <div id="saved" class="history-empty">Sign in to see your saved documents.</div>
     </aside>
   </main>
 
@@ -65,17 +78,21 @@
   <script>
     const $=s=>document.querySelector(s);
     const box=$('#text'), counter=$('#counter'), err=$('#error'), out=$('#results');
-    const btnAnalyze=$('#analyzeBtn'), btnSpellFix=$('#spellFixBtn'), btnDemo=$('#demoBtn'), btnClear=$('#clearBtn'), btnClearHist=$('#clearHist');
 
+    const btnAnalyze=$('#analyzeBtn'), btnSpellFix=$('#spellFixBtn'), btnDemo=$('#demoBtn'), btnClear=$('#clearBtn');
+
+    // live counter
     function updateCounts(){
       const text=box.value;
       const words=(text.match(/[\p{L}\p{N}’'-]+/gu)||[]).length;
       const chars=text.length;
       counter.textContent=`${words} words · ${chars} chars`;
-      saveDraft();
+      localStorage.setItem('ec_draft', text || '');
     }
     box.addEventListener('input',updateCounts);
+    (function initDraft(){ const d=localStorage.getItem('ec_draft'); if(d){ box.value=d; } updateCounts(); })();
 
+    // spell fix + shortcuts
     function spellFix(t){
       const fixes={'teh':'the','recieve':'receive','seperate':'separate','definately':'definitely','occured':'occurred','accomodate':'accommodate','adress':'address','embarass':'embarrass','wich':'which','wierd':'weird'};
       t=t.replace(/\b(teh|recieve|seperate|definately|occured|accomodate|adress|embarass|wich|wierd)\b/gi,m=>fixes[m.toLowerCase()]);
@@ -84,65 +101,65 @@
       t=t.replace(/(^|[\.!\?]\s+)([a-z])([A-Z])/g,(_,a,b,c)=>a+b.toUpperCase()+c.toLowerCase());
       return t.trim();
     }
-    btnSpellFix.addEventListener('click',()=>{ box.value=spellFix(box.value); updateCounts(); });
+    btnSpellFix.onclick=()=>{ box.value=spellFix(box.value); updateCounts(); };
     document.addEventListener('keydown',e=>{ const ctrlOrCmd=e.ctrlKey||e.metaKey; if(ctrlOrCmd&&e.altKey&&e.key.toLowerCase()==='x'){ e.preventDefault(); btnSpellFix.click(); }});
+    box.addEventListener('keydown',e=>{ if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='enter') analyze(); });
 
+    // analyze + save if logged in
     async function analyze(){
       hideError();
       const text=(box.value||'').trim();
-      if(!text){ return showError('Please paste some text first.'); }
+      if(!text) return showError('Please paste some text first.');
       btnAnalyze.disabled=true; btnAnalyze.textContent='Analyzing…';
       try{
-        const url=new URL('/analyze',window.location.origin);
-        const res=await fetch(url.toString(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
+        const res=await fetch('/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
         const data=await res.json().catch(()=>({}));
         if(!res.ok) throw new Error(data.error||('HTTP '+res.status));
 
         const rows=(data.items||[]).map(i=>`<tr><td>${cap(i.category)}</td><td>${i.score}/10</td><td>${escapeHtml(i.comment)}</td></tr>`).join('');
-        out.innerHTML=`
-          <div class="results-head">
-            <div class="badge">${data.percent}%</div>
-            <div><div class="meta">${data.total} / ${data.out_of}</div><p class="summary">${escapeHtml(data.summary)}</p></div>
-          </div>
+        const html=`
+          <div class="results-head"><div class="badge">${data.percent}%</div>
+          <div><div class="meta">${data.total} / ${data.out_of}</div><p class="summary">${escapeHtml(data.summary)}</p></div></div>
           <table class="rubric"><thead><tr><th>Category</th><th>Score</th><th>Comment</th></tr></thead><tbody>${rows}</tbody></table>
-          <div class="suggestions"><h3>Top Suggestions</h3><ul>${(data.suggestions||[]).map(s=>`<li>${escapeHtml(s)}</li>`).join('')}</ul></div>
-          <div class="actions"><button id="copyBtn" class="btn btn-quiet">Copy Summary</button><button id="downloadBtn" class="btn btn-quiet">Download JSON</button><button id="downloadTxtBtn" class="btn btn-quiet">Download TXT</button></div>
-        `;
-        out.style.display='';
-        $('#copyBtn').onclick=async()=>{ const summary=`Score: ${data.percent}% (${data.total}/${data.out_of})\n`+(data.items||[]).map(i=>`${i.category}: ${i.score}/10 — ${i.comment}`).join('\n')+`\nSuggestions:\n- `+(data.suggestions||[]).join('\n- '); await navigator.clipboard.writeText(summary); alert('Summary copied'); };
-        $('#downloadBtn').onclick=()=>downloadBlob(JSON.stringify(data,null,2),'analysis.json','application/json');
-        $('#downloadTxtBtn').onclick=()=>{ const textOut=`Score: ${data.percent}% (${data.total}/${data.out_of})\n`+(data.items||[]).map(i=>`${i.category}: ${i.score}/10 — ${i.comment}`).join('\n')+`\n\nSuggestions:\n- `+(data.suggestions||[]).join('\n- '); downloadBlob(textOut,'analysis.txt','text/plain'); };
-        addHistory({ts:Date.now(),percent:data.percent,text,html:out.innerHTML,data});
+          <div class="suggestions"><h3>Top Suggestions</h3><ul>${(data.suggestions||[]).map(s=>`<li>${escapeHtml(s)}</li>`).join('')}</ul></div>`;
+        out.innerHTML=html; out.style.display='';
+
+        // try save (if logged in)
+        const me = await getMe();
+        if (me) {
+          await fetch('/api/docs', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ text, html, meta:{ percent:data.percent } })});
+          await loadSaved();
+        }
       }catch(e){ showError(e?.message||'Something went wrong'); }
       finally{ btnAnalyze.disabled=false; btnAnalyze.textContent='Analyze'; }
     }
-    btnAnalyze.addEventListener('click',analyze);
-    box.addEventListener('keydown',e=>{ if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='enter') analyze(); });
+    btnAnalyze.onclick=analyze;
 
-    // Demo / Clear
-    btnDemo.onclick=()=>{ box.value=`Since middle school I have chased challenges, but I learned the most when I slowed down and reflected.
-For example, I led our class fundraiser and tracked costs; we increased revenue by 28% in one month.
-I now focus on clarity and specific impact rather than vague ambition. Ultimately, my goal is to build tools that help students learn faster without losing their voice.`; updateCounts(); };
-    btnClear.onclick=()=>{ box.value=''; updateCounts(); saveDraft(); };
+    // auth UI
+    const authState=$('#authState'), authForm=$('#authForm'), authActions=$('#authActions');
+    const email=$('#email'), pass=$('#pass');
+    $('#signup').onclick=async()=>{ const r=await post('/api/auth/signup',{email:email.value.trim(),password:pass.value}); if(r.ok){ email.value=''; pass.value=''; renderAuthed(r.user.email); await loadSaved(); } else alert(r.error||'Signup failed'); };
+    $('#login').onclick=async()=>{ const r=await post('/api/auth/login',{email:email.value.trim(),password:pass.value}); if(r.ok){ email.value=''; pass.value=''; renderAuthed(r.user.email); await loadSaved(); } else alert(r.error||'Login failed'); };
+    $('#logout').onclick=async()=>{ await fetch('/api/auth/logout',{method:'POST'}); renderLoggedOut(); };
 
-    // History
-    function addHistory(entry){ const arr=JSON.parse(localStorage.getItem('ec_history')||'[]'); arr.unshift(entry); localStorage.setItem('ec_history',JSON.stringify(arr.slice(0,5))); renderHistory(); }
-    function renderHistory(){ const arr=JSON.parse(localStorage.getItem('ec_history')||'[]'); const el=$('#history'); if(!arr.length){ el.className='history-empty'; el.textContent='No history yet.'; return; } el.className='history'; el.innerHTML=arr.map((e,i)=>`<div class="hist"><div class="hist-top"><span class="chip">${e.percent}%</span><span class="time">${new Date(e.ts).toLocaleString()}</span></div><div class="preview">${escapeHtml((e.text||'').slice(0,180))}${(e.text||'').length>180?'…':''}</div><div class="hist-actions"><button class="btn btn-quiet" onclick="loadFromHistory(${i})">Load</button><button class="btn btn-quiet" onclick="downloadJson(${i})">JSON</button></div></div>`).join(''); }
-    window.loadFromHistory=function(i){ const arr=JSON.parse(localStorage.getItem('ec_history')||'[]'); if(!arr[i]) return; box.value=arr[i].text||''; updateCounts(); out.style.display=''; out.innerHTML=arr[i].html||'(No cached HTML)'; window.scrollTo({top:0,behavior:'smooth'}); }
-    window.downloadJson=function(i){ const arr=JSON.parse(localStorage.getItem('ec_history')||'[]'); if(!arr[i]) return; downloadBlob(JSON.stringify(arr[i].data,null,2),'analysis.json','application/json'); }
+    async function initAuth(){ const me=await getMe(); if(me){ renderAuthed(me.email); await loadSaved(); } else renderLoggedOut(); }
+    function renderAuthed(email){ authState.textContent = `Signed in as ${email}`; authForm.style.display='none'; authActions.style.display=''; $('#saved').textContent='Loading…'; }
+    function renderLoggedOut(){ authState.textContent='You are not signed in.'; authForm.style.display=''; authActions.style.display='none'; $('#saved').textContent='Sign in to see your saved documents.'; }
+    async function loadSaved(){ const r=await fetch('/api/docs'); if(r.ok){ const {docs}=await r.json(); renderSaved(docs); } }
+    function renderSaved(docs){ const el=$('#saved'); if(!docs || !docs.length){ el.className='history-empty'; el.textContent='No saved documents yet.'; return; } el.className='history'; el.innerHTML=docs.map(d=>`<div class="hist"><div class="hist-top"><span class="chip">${(d.data?.meta?.percent??'–')}%</span><span class="time">${new Date(d.ts).toLocaleString()}</span></div><div class="preview">${escapeHtml(d.preview)}${d.preview.length>180?'…':''}</div></div>`).join(''); }
 
-    // Helpers
-    function downloadBlob(content,name,type){ const blob=new Blob([content],{type}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=name; a.click(); URL.revokeObjectURL(url); }
+    // helpers
     function showError(m){ err.textContent=m; err.style.display=''; }
     function hideError(){ err.textContent=''; err.style.display='none'; }
     function cap(s){ return s? s[0].toUpperCase()+s.slice(1):s; }
     function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-    function saveDraft(){ localStorage.setItem('ec_draft', box.value||''); }
-    function loadDraft(){ const d=localStorage.getItem('ec_draft'); if(d){ box.value=d; } }
+    async function post(url, body){ const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); return r.json().catch(()=>({})); }
+    async function getMe(){ const r=await fetch('/api/auth/me'); if(!r.ok) return null; const j=await r.json(); return j.user; }
 
     // init
-    loadDraft(); updateCounts(); renderHistory();
+    initAuth();
   </script>
 </body>
 </html>
+
 
