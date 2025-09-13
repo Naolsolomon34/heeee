@@ -6,77 +6,161 @@
   <title>Essay & Resume Checker</title>
   <link rel="icon" href="/public/favicon.svg" />
   <link rel="stylesheet" href="/styles.css" />
-  <style>
-    /* extra safety if styles.css is cached/missing */
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#0b0f14;color:#eaeef3;margin:0}
-    header{padding:24px;text-align:center;background:#0f1720;border-bottom:1px solid #1b2635}
-    h1{margin:0;font-size:28px}.sub{color:#a7b1c2;margin-top:6px}
-    main{max-width:900px;margin:24px auto;padding:0 16px}
-    .card{background:#0f1623;border:1px solid #1b2740;border-radius:16px;padding:16px;margin-bottom:16px}
-    textarea{width:100%;padding:12px;border-radius:12px;border:1px solid #22314a;background:#0c141e;color:#eaeef3;font-size:16px}
-    .actions{margin-top:12px;display:flex;gap:8px}
-    button{background:#2e6bff;color:#fff;border:none;border-radius:12px;padding:12px 16px;font-size:16px;cursor:pointer}
-    button.ghost{background:transparent;border:1px solid #2e6bff}
-    .hint{color:#ff9aa2;display:none}
-    .score{display:grid;grid-template-columns:120px 1fr;align-items:center;gap:12px;margin-bottom:12px}
-    .score-number{font-size:40px;font-weight:700}.score-meta{color:#9db0c5}
-    table{width:100%;border-collapse:collapse}
-    th,td{border-bottom:1px solid #21314b;padding:10px 8px;text-align:left}
-    @media (max-width:640px){.score{grid-template-columns:1fr}}
-  </style>
 </head>
 <body>
-  <header>
-    <h1>Essay & Resume Checker</h1>
-    <p class="sub">Fast, actionable feedback — no paid AI required.</p>
+  <header class="site-header">
+    <div class="wrap">
+      <div class="brand">
+        <div class="dot"></div>
+        <span>Essay Checker</span>
+      </div>
+      <nav class="nav">
+        <a href="#" class="nav-link">Home</a>
+        <a href="#" class="nav-link">Why it works</a>
+        <a href="#" class="nav-link">Roadmap</a>
+      </nav>
+    </div>
   </header>
 
-  <main>
+  <main class="wrap grid">
+    <!-- Editor -->
     <section class="card">
-      <h2>Paste your text</h2>
-      <textarea id="text" rows="14" placeholder="Paste your essay or resume here..."></textarea>
-      <div class="actions">
-        <button id="analyzeBtn">Analyze</button>
-        <button id="demoBtn" class="ghost" title="Fill sample text">Use demo text</button>
+      <div class="card-head">
+        <h1 class="title">Write or paste your text</h1>
+        <div id="counter" class="counter">0 words · 0 chars</div>
       </div>
-      <p id="error" class="hint"></p>
+
+      <textarea id="text" spellcheck="true" placeholder="Paste your essay or resume here..."></textarea>
+
+      <div class="toolbar">
+        <div class="left">
+          <button id="analyzeBtn" class="btn btn-primary">Analyze</button>
+          <button id="spellFixBtn" class="btn btn-quiet" title="Ctrl+Alt+X">Spell Fix</button>
+          <button id="demoBtn" class="btn btn-quiet">Use demo text</button>
+          <button id="clearBtn" class="btn btn-quiet">Clear</button>
+        </div>
+        <div class="right">
+          <span id="lengthHint" class="hint" style="display:none"></span>
+          <span class="kbd">Ctrl/Cmd + Enter</span>
+          <span class="dot-sep"></span>
+          <span class="kbd">Ctrl+Alt+X</span><span class="hint-lite"> Spell Fix</span>
+        </div>
+      </div>
+      <p id="error" class="error" style="display:none"></p>
     </section>
 
+    <!-- Results -->
     <section id="results" class="card" style="display:none"></section>
+
+    <!-- History -->
+    <aside class="card side">
+      <h2 class="side-title">History</h2>
+      <div id="history" class="history-empty">No history yet.</div>
+      <div class="actions">
+        <button id="clearHist" class="btn btn-quiet">Clear history</button>
+      </div>
+    </aside>
   </main>
 
-  <footer>
-    <p style="text-align:center;color:#9aa8b8;padding:24px 0">Built as an MVP for learning and demo purposes.</p>
+  <footer class="site-footer">
+    <div class="wrap">
+      <span>Built as an MVP for learning and demo purposes.</span>
+    </div>
   </footer>
 
   <script>
-    const $ = sel => document.querySelector(sel);
-    const btn = $('#analyzeBtn');
-    const demo = $('#demoBtn');
-    const out = $('#results');
-    const err = $('#error');
+    const $ = s => document.querySelector(s);
     const box = $('#text');
+    const counter = $('#counter');
+    const hint = $('#lengthHint');
+    const err = $('#error');
+    const out = $('#results');
 
-    demo.onclick = () => {
-      box.value = `Since middle school I have chased challenges, but I learned the most when I slowed down and reflected.
-For example, I led our class fundraiser and tracked costs; we increased revenue by 28% in one month.
-I now focus on clarity and specific impact rather than vague ambition. Ultimately, my goal is to build tools that help students learn faster without losing their voice.`;
-    };
+    const btnAnalyze = $('#analyzeBtn');
+    const btnSpellFix = $('#spellFixBtn');
+    const btnDemo = $('#demoBtn');
+    const btnClear = $('#clearBtn');
+    const btnClearHist = $('#clearHist');
 
-    function showError(msg){
-      err.textContent = msg;
-      err.style.display = '';
+    // --- live counter + 650-word guidance
+    function updateCounts() {
+      const text = box.value;
+      const words = (text.match(/[\p{L}\p{N}’'-]+/gu) || []).length;
+      const chars = text.length;
+      counter.textContent = `${words} words · ${chars} chars`;
+
+      if (words < 650) {
+        hint.textContent = `Tip: Your draft is under 650 words. Admissions essays often target 650.`;
+        hint.style.display = '';
+        hint.className = 'hint warn';
+      } else if (words <= 700) {
+        hint.textContent = `Nice — you’re in the 650–700 range.`;
+        hint.style.display = '';
+        hint.className = 'hint ok';
+      } else {
+        hint.textContent = `Over 700 — consider trimming for punch.`;
+        hint.style.display = '';
+        hint.className = 'hint warn';
+      }
+      saveDraft();
     }
-    function hideError(){
-      err.textContent = '';
-      err.style.display = 'none';
+    box.addEventListener('input', updateCounts);
+
+    // --- quick spell fix (Ctrl+Alt+X)
+    function spellFix(text) {
+      let t = text;
+
+      // Common misspellings
+      const fixes = {
+        'teh': 'the',
+        'recieve': 'receive',
+        'seperate': 'separate',
+        'definately': 'definitely',
+        'occured': 'occurred',
+        'accomodate': 'accommodate',
+        'adress': 'address',
+        'embarass': 'embarrass',
+        'wich': 'which',
+        'wierd': 'weird',
+      };
+      t = t.replace(/\b(teh|recieve|seperate|definately|occured|accomodate|adress|embarass|wich|wierd)\b/gi,
+        m => fixes[m.toLowerCase()]);
+
+      // Lone “i” → “I” (not in words)
+      t = t.replace(/(^|[\s“"(\[])(i)([ \.,;:!\?)\]’"”]|$)/g, (_, a, b, c) => `${a}I${c}`);
+
+      // Normalize spaces & punctuation spacing
+      t = t.replace(/[ \t]+/g, ' ')          // collapse multiple spaces
+           .replace(/ ?([,;:\.\!\?])/g, '$1 ') // ensure one space after punctuation
+           .replace(/\s+([’”"\)\]\}])/g, '$1') // no space before closing
+           .replace(/([(\[\{“‘])\s+/g, '$1');  // no space right after opening
+
+      // Double capital fix for sentence starts like "tHe"
+      t = t.replace(/(^|[\.!\?]\s+)([a-z])([A-Z])/g, (_, a, b, c) => a + b.toUpperCase() + c.toLowerCase());
+
+      return t.trim();
     }
 
+    btnSpellFix.addEventListener('click', () => {
+      box.value = spellFix(box.value);
+      updateCounts();
+    });
+    // Keyboard shortcut: Ctrl+Alt+X / Cmd+Alt+X
+    document.addEventListener('keydown', (e) => {
+      const ctrlOrCmd = e.ctrlKey || e.metaKey;
+      if (ctrlOrCmd && e.altKey && e.key.toLowerCase() === 'x') {
+        e.preventDefault();
+        btnSpellFix.click();
+      }
+    });
+
+    // --- analyze
     async function analyze() {
       hideError();
       const text = (box.value || '').trim();
       if (!text) return showError('Please paste some text first.');
-      btn.disabled = true; btn.textContent = 'Analyzing...';
+
+      btnAnalyze.disabled = true; btnAnalyze.textContent = 'Analyzing…';
       try {
         const url = new URL('/analyze', window.location.origin);
         const res = await fetch(url.toString(), {
@@ -84,41 +168,38 @@ I now focus on clarity and specific impact rather than vague ambition. Ultimatel
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text })
         });
-        const data = await res.json().catch(()=> ({}));
+        const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
 
-        // Build table rows
         const rows = (data.items || []).map(i => `
-          <tr>
-            <td>${cap(i.category)}</td>
-            <td>${i.score}/10</td>
-            <td>${escapeHtml(i.comment)}</td>
-          </tr>
+          <tr><td>${cap(i.category)}</td><td>${i.score}/10</td><td>${escapeHtml(i.comment)}</td></tr>
         `).join('');
 
-        out.innerHTML = `
-          <h2>Results</h2>
-          <div class="score">
-            <div class="score-number">${data.percent}%</div>
-            <div class="score-meta">${data.total} / ${data.out_of}</div>
-            <p>${escapeHtml(data.summary)}</p>
+        const html = `
+          <div class="results-head">
+            <div class="badge">${data.percent}%</div>
+            <div>
+              <div class="meta">${data.total} / ${data.out_of}</div>
+              <p class="summary">${escapeHtml(data.summary)}</p>
+            </div>
           </div>
           <table class="rubric">
             <thead><tr><th>Category</th><th>Score</th><th>Comment</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
-          <div class="suggestions" style="margin-top:12px">
+          <div class="suggestions">
             <h3>Top Suggestions</h3>
             <ul>${(data.suggestions || []).map(s => `<li>${escapeHtml(s)}</li>`).join('')}</ul>
           </div>
-          <div class="actions" style="margin-top:12px">
-            <button id="copyBtn" class="ghost">Copy Summary</button>
-            <button id="downloadBtn" class="ghost">Download Report</button>
+          <div class="actions">
+            <button id="copyBtn" class="btn btn-quiet">Copy Summary</button>
+            <button id="downloadBtn" class="btn btn-quiet">Download JSON</button>
+            <button id="downloadTxtBtn" class="btn btn-quiet">Download TXT</button>
           </div>
         `;
-        out.style.display = '';
+        out.innerHTML = html; out.style.display = '';
 
-        // wire actions
+        // actions
         $('#copyBtn').onclick = async () => {
           const summary =
             `Score: ${data.percent}% (${data.total}/${data.out_of})\n` +
@@ -127,31 +208,93 @@ I now focus on clarity and specific impact rather than vague ambition. Ultimatel
           await navigator.clipboard.writeText(summary);
           alert('Summary copied to clipboard');
         };
-        $('#downloadBtn').onclick = () => {
-          const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a'); a.href = url; a.download = 'analysis.json'; a.click();
-          URL.revokeObjectURL(url);
+        $('#downloadBtn').onclick = () => downloadBlob(JSON.stringify(data, null, 2), 'analysis.json', 'application/json');
+        $('#downloadTxtBtn').onclick = () => {
+          const textOut = `Score: ${data.percent}% (${data.total}/${data.out_of})\n` +
+            (data.items||[]).map(i => `${i.category}: ${i.score}/10 — ${i.comment}`).join('\n') +
+            `\n\nSuggestions:\n- ` + (data.suggestions||[]).join('\n- ');
+          downloadBlob(textOut, 'analysis.txt', 'text/plain');
         };
+
+        addHistory({ ts: Date.now(), percent: data.percent, text, html, data });
 
       } catch (e) {
         showError(e && e.message ? e.message : 'Something went wrong');
       } finally {
-        btn.disabled = false; btn.textContent = 'Analyze';
+        btnAnalyze.disabled = false; btnAnalyze.textContent = 'Analyze';
       }
     }
 
-    btn.addEventListener('click', analyze);
+    btnAnalyze.addEventListener('click', analyze);
     box.addEventListener('keydown', e => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'enter') analyze();
     });
 
-    function cap(s){ return s ? s[0].toUpperCase() + s.slice(1) : s; }
-    function escapeHtml(s){
-      return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    // --- demo / clear
+    btnDemo.onclick = () => {
+      box.value = `Since middle school I have chased challenges, but I learned the most when I slowed down and reflected.
+For example, I led our class fundraiser and tracked costs; we increased revenue by 28% in one month.
+I now focus on clarity and specific impact rather than vague ambition. Ultimately, my goal is to build tools that help students learn faster without losing their voice.`;
+      updateCounts();
+    };
+    btnClear.onclick = () => { box.value = ''; updateCounts(); saveDraft(); }
+
+    // --- history
+    function addHistory(entry){
+      const arr = JSON.parse(localStorage.getItem('ec_history')||'[]');
+      arr.unshift(entry);
+      localStorage.setItem('ec_history', JSON.stringify(arr.slice(0,5)));
+      renderHistory();
     }
+    function renderHistory(){
+      const arr = JSON.parse(localStorage.getItem('ec_history')||'[]');
+      const el = $('#history');
+      if (!arr.length) { el.className='history-empty'; el.textContent='No history yet.'; return; }
+      el.className='history';
+      el.innerHTML = arr.map((e,i)=>`
+        <div class="hist">
+          <div class="hist-top">
+            <span class="chip">${e.percent}%</span>
+            <span class="time">${new Date(e.ts).toLocaleString()}</span>
+          </div>
+          <div class="preview">${escapeHtml((e.text||'').slice(0,180))}${(e.text||'').length>180?'…':''}</div>
+          <div class="hist-actions">
+            <button class="btn btn-quiet" onclick="loadFromHistory(${i})">Load</button>
+            <button class="btn btn-quiet" onclick="downloadJson(${i})">JSON</button>
+          </div>
+        </div>
+      `).join('');
+    }
+    window.loadFromHistory = function(i){
+      const arr = JSON.parse(localStorage.getItem('ec_history')||'[]');
+      if (!arr[i]) return;
+      box.value = arr[i].text || '';
+      updateCounts();
+      out.style.display = ''; out.innerHTML = arr[i].html || '(No cached HTML)';
+      window.scrollTo({top:0,behavior:'smooth'});
+    }
+    window.downloadJson = function(i){
+      const arr = JSON.parse(localStorage.getItem('ec_history')||'[]');
+      if (!arr[i]) return;
+      downloadBlob(JSON.stringify(arr[i].data, null, 2), 'analysis.json', 'application/json');
+    }
+
+    // --- misc helpers
+    function downloadBlob(content, name, type){
+      const blob = new Blob([content], {type});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href=url; a.download=name; a.click();
+      URL.revokeObjectURL(url);
+    }
+    function showError(m){ err.textContent=m; err.style.display=''; }
+    function hideError(){ err.textContent=''; err.style.display='none'; }
+    function cap(s){ return s ? s[0].toUpperCase() + s.slice(1) : s; }
+    function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function saveDraft(){ localStorage.setItem('ec_draft', box.value || ''); }
+    function loadDraft(){ const d = localStorage.getItem('ec_draft'); if (d){ box.value=d; } }
+
+    // init
+    loadDraft(); updateCounts(); renderHistory();
   </script>
 </body>
 </html>
-
-
